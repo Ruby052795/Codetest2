@@ -3,10 +3,6 @@ Task 2: book.{instrument_name}.{depth}
 1, Description
 Python+BDD for WebSocket API: book.{instrument_name}.{depth}
 
-2, Features Tested
-
-
-
 *************************************************************************
 3, Setup Guides
 3.1 Clone the repository
