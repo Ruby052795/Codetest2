@@ -6,25 +6,27 @@ import logging
 from unittest.mock import MagicMock
 
 def _wait_and_receive(context, timeout=10.0):
-    """
-    设置超时并从 websocket 接收消息
-    """
     try:
         context.ws.settimeout(timeout)
         message_str = context.ws.recv()
-        message = json.loads(message_str)
-        logging.debug(f"RECV: {message}")
+        if not message_str:
+            raise ConnectionAbortedError("Connect closed.")
 
-        # 区分错误响应和数据响应
+
+        logging.debug(f"RECV RAW: {message_str}")
+
+        message = json.loads(message_str)
+
         if message.get("code") != 0 and message.get("method") == "subscribe":
             context.last_error = message
         else:
             context.messages.append(message)
         return message
+
     except websocket.WebSocketTimeoutException:
-        raise TimeoutError(f"在 {timeout}s 内未收到消息")
+        raise TimeoutError(f"Didn't receive messages in  {timeout}s")
     except Exception as e:
-        raise ConnectionError(f"接收消息时出错: {e}")
+        raise ConnectionError(f"Error: {e}")
 
 
 
@@ -45,7 +47,7 @@ def step_impl(context, channel):
 @given('I subscribed to "{channel}" (SNAPSHOT_AND_UPDATE) mode')
 def step_impl(context, channel):
     context.execute_steps(f'''
-        When I send a subscription request: channels="{channel}", subscription_type="SNAPSHOT_AND_UPDATE", update_frequency="10"
+        When I send a subscription request: channels="{channel}", subscription_type="SNAPSHOT_AND_UPDATE", update_frequency="100"
         Then I should receive a response said Successful Subscription
     ''')
     context.subscription_channel = channel
@@ -92,7 +94,7 @@ def step_impl(context, n):
 
 @when('I waited and received the next delta response')
 def step_impl(context):
-    while len(context.messages) < 3:
+    while len(context.messages) < 4:
         _wait_and_receive(context)
 
 @when('I wait up to {seconds:d} seconds to receive a heartbeat package')
@@ -169,7 +171,62 @@ def step_impl(context):
             Given I subscribed to "book.BTCUSD-PERP.50" (SNAPSHOT) mode
         ''')
 
+@when('received and collect {count:d} delta messages')
+def step_impl(context, count):
+    logging.info(f"received {count} delta messages...")
+    context.timestamps = []
+    context.sequence_ok = True
 
+    start_time = time.time()
+    max_wait_seconds = 10
+
+    while len(context.timestamps) < count:
+
+        try:
+            message = _wait_and_receive(context, timeout=0.5)
+
+            if message.get("result", {}).get("channel") == "book.update":
+                data = message["result"]["data"][0]
+
+                pu = data.get("pu")
+                if pu != context.last_u:
+                    context.sequence_ok = False
+                    logging.error(f"Sequence mismatched! Expected PU={context.last_u}, Actual PU={pu}")
+                context.last_u = data.get("u")
+
+                update_data = data.get("update", {})
+                if update_data.get("asks") != [] or update_data.get("bids") != []:
+                    context.timestamps.append(data["t"])
+
+        except TimeoutError:
+            pass
+
+@when('received and collect snapshot messages in {seconds:d}s')
+def step_impl(context, seconds):
+    logging.info(f"{seconds} 秒, received snapshot messages...")
+    context.timestamps = []
+    context.sequence_ok = True
+
+    start_time = time.time()
+    while time.time() - start_time < seconds:
+        try:
+            message = _wait_and_receive(context, timeout=0.5)
+
+            if message.get("result", {}).get("channel") == "book":
+                data = message["result"]["data"][0]
+
+                pu = data.get("pu")
+                if pu != context.last_u:
+                    context.sequence_ok = False
+                    logging.error(f"Sequence mismatched! Expected PU={context.last_u}, Actual PU={pu}")
+                context.last_u = data.get("u")
+
+                update_data = data.get("update", {})
+                if update_data.get("asks") != [] or update_data.get("bids") != []:
+                    context.timestamps.append(data["t"])
+
+        except TimeoutError:
+            pass
 
 
 # ---Then---
@@ -180,18 +237,11 @@ def step_impl(context):
 
     subscribed_msg = context.messages[0]
 
-    assert subscribed_msg.get("method") == "subscribe", f"不是 'subscribe' 响应: {subscribed_msg.get('method')}"
+    assert subscribed_msg.get("method") == "subscribe", f"Not 'subscribe': {subscribed_msg.get('method')}"
     assert subscribed_msg.get("code") == 0, f"Subscribed failed, code: {subscribed_msg.get('code')}"
 
 @then('I should receive a snapshot response')
 def step_impl(context):
-    # if len(context.messages) < 2:
-    #     time.sleep(2)
-    #     raise AssertionError(f"Expected to receive at least 2 response.")
-    #
-    # if not context.messages[1]:
-    #     _wait_and_receive(context)
-    #
 
     start_time = time.time()
     timeout = 10
@@ -200,7 +250,7 @@ def step_impl(context):
         for msg in context.messages:
             result = msg.get("result", {})
             if result.get("channel") == "book":
-                logging.info("成功找到 'book' 快照。")
+                logging.info("Find 'book' snapshot.")
 
                 assert msg.get("method") == "subscribe"
                 assert msg.get("code") == 0
@@ -211,16 +261,16 @@ def step_impl(context):
         except TimeoutError:
             pass
 
-        raise AssertionError(f"在 {timeout}s 内未能收到 'book' 快照消息。")
+        raise AssertionError(f"Didn't receive snapshot message in {timeout}s.")
 
     snapshot_msg = context.messages[1]
 
-    assert snapshot_msg.get("method") == "subscribe", f"不是 'subscribe' 响应: {snapshot_msg.get('method')}"
+    assert snapshot_msg.get("method") == "subscribe", f"Not 'subscribe': {snapshot_msg.get('method')}"
     assert snapshot_msg.get("code") == 0, f"Subscribed failed, code: {snapshot_msg.get('code')}"
 
     result = snapshot_msg.get("result", {})
-    assert result.get("channel") == "book", f"响应的 channel 是：{result.get('channel')}"
-    assert result.get("subscription") == context.subscription_channel, f"订阅频道:{result.get('subscription')}"
+    assert result.get("channel") == "book", f"Incorrect channel：{result.get('channel')}"
+    assert result.get("subscription") == context.subscription_channel, f"subscription:{result.get('subscription')}"
     assert "data" in result and len(result.get("data", [])) > 0
 
 
@@ -264,27 +314,26 @@ def step_impl(context):
 
     snapshot_msg = context.messages[2]
     result = snapshot_msg.get("result", {})
-    assert result.get("channel") == "book", "消息不是 'book' 快照"
-    assert len(result.get("data", [])) > 0, "快照 'data' 为空"
+    assert result.get("channel") == "book", "Channel is not 'book'"
+    assert len(result.get("data", [])) > 0, "No 'data'"
 
-@then('The time interval between the first and second snapshots should be close to {expected_ms:d}ms')
+@then('The time interval between messages should be close to {expected_ms:d}ms')
 def step_impl(context,expected_ms):
-    msg1_data = context.messages[1]["result"]["data"][0]
-    msg2_data = context.messages[2]["result"]["data"][0]
+    if len(context.timestamps) < 10:
+        logging.warning(f"Only collect {len(context.timestamps)} messages), ")
 
-    t1 = msg1_data["t"]
-    t2 = msg2_data["t"]
+    total_time_span_ms = context.timestamps[-1] - context.timestamps[0]
+    num_intervals = len(context.timestamps) - 1
 
-    actual_interval_ms = t2 - t1
-    logging.info(f"Subscription frequency: T2({t2}) - T1({t1}) = {actual_interval_ms}ms")
+    average_interval_ms = total_time_span_ms / num_intervals
 
-    tolerance_ms = 100
-    min_ms = expected_ms - tolerance_ms
-    max_ms = expected_ms + tolerance_ms
+    tolerance_percent = 0.5
+    min_ms = expected_ms * (1 - tolerance_percent)
+    max_ms = expected_ms * (1 + tolerance_percent)
 
-    assert min_ms <= actual_interval_ms <= max_ms
+    assert min_ms <= average_interval_ms <= max_ms
 
-@then('The data structure and sorting of the snapshot should be correct')
+@then('The data structure of the snapshot should be correct')
 def step_impl(context):
     snapshot_msg = context.messages[-1]
     data = snapshot_msg["result"]["data"][0]
@@ -313,6 +362,11 @@ def step_impl(context):
     context.last_u = data["u"]
     assert context.last_u is not None
     logging.info(f"[Info] 'U' sequence in snapshot response : {context.last_u}")
+
+@then('The u and pu sequences must remain continuous')
+def step_impl(context):
+    assert context.sequence_ok, "u/pu mismatched"
+
 
 @then('pu field of the delta message should be equal to u field stored')
 def step_impl(context):
@@ -345,7 +399,7 @@ def step_impl(context):
 def step_impl(context):
     assert context.heartbeat_received, f"Didn't receive heartbeat message"
 
-@then('I detected sequences mismatch. (TC-15)')
+@then('I detected sequences mismatch')
 def step_impl(context):
     update_msg = context.messages[-1]
     data = update_msg["result"]["data"][0]

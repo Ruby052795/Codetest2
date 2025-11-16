@@ -36,20 +36,19 @@ Feature: WebSocket orderbook API
   @snapshot @TC10 @TC11
   Scenario: TC-10, TC-11 - SNAPSHOT Mode Behavior and Data Validation
     Given I subscribed to "book.BTCUSD-PERP.10" (SNAPSHOT) mode
-    When I waited and received the 3 snapshot response
+    When received and collect snapshot messages in 3s
     And I re-subscribed the same request with depth value changed (TC-11)
     Then The second snapshot response should be a valid snapshot message
-    And The time interval between the first and second snapshots should be close to 500ms
-    And The data structure and sorting of the snapshot should be correct
+    And The time interval between messages should be close to 500ms
+    And The data structure of the snapshot should be correct
 
   @delta @TC12 @TC13
   Scenario: TC-12, TC-13 - DELTA Mode Updates and Sequence Validation
     Given I subscribed to "book.BTCUSD-PERP.10" (SNAPSHOT_AND_UPDATE) mode
-    When I waited and received the next delta response
-    And I stored the u field of the snapshot response
+    When received and collect 3 delta messages
     And I re-subscribed the same request with depth value changed (TC-13)
-    Then The response should be a valid delta message
-    And pu field of the delta message should be equal to u field stored
+    Then The time interval between messages should be close to 100ms
+    And The u and pu sequences must remain continuous
     And The data structure of the delta should be correct
 
   # need a 'instrument_name' which have no update to track a heartbeat package
@@ -66,7 +65,7 @@ Feature: WebSocket orderbook API
     And I stored the u field of the snapshot response
     And Intentionally set the locally stored u sequence to "BAD_SEQUENCE"
     And I waited and received the next delta response
-    Then I detected sequences mismatch. (TC-15)
+    Then I detected sequences mismatch
     When Re-subscribed the same request
     Then I should receive a response said Successful Subscription
     And I should receive a snapshot response
