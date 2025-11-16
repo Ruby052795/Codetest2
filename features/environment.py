@@ -25,6 +25,19 @@ def before_scenario(context, scenario):
         logging.error(f"Failed to connect to {WEBSOCKET_URL}: {e}")
         raise
 
+    try:
+        context.ws = websocket.create_connection(
+            WEBSOCKET_URL,
+            timeout=10,
+            ping_interval=20,
+            ping_timeout=5
+        )
+
+        logging.info("WebSocket Connection opened for new scenario.")
+    except Exception as e:
+        logging.error(f"Failed to connect to {WEBSOCKET_URL}: {e}")
+        raise
+
     # Initialization Settings
     # to store Websocket response
     context.messages = []
