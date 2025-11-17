@@ -20,9 +20,8 @@ git clone git@github.com:Ruby052795/Codetest2.git
     # run all feature file
     behave
     # run specific feature file
-    behave features/public_api/get_candlestick.feature
-    # run test cases by tags
-    behave -t @positive_case -vs
+    behave features/ws_orderbook.feature
+
 
 3.4 Test Report
     # Allure should be properly configured on your local machine
