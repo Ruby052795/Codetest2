@@ -99,44 +99,75 @@ def step_impl(context):
 
 @when('I wait up to {seconds:d} seconds to receive a heartbeat package')
 def step_impl(context, seconds):
+
+    if not hasattr(context, 'last_u') or context.last_u is None:
+        raise AssertionError("No 'last_u' value. ")
+
     start_time = time.time()
     context.heartbeat_received = False
+
     while time.time() - start_time < seconds:
         try:
             message = _wait_and_receive(context, timeout=1.0)
-        except TimeoutError:
-            continue
 
-        result = message.get("result", {})
-        if result.get("channel") == "book.update":
-            data = result.get("data", [{}])[0]
-            update_data = data.get("update", {})
-
-            if update_data.get("asks") == [] and update_data.get("bids") == []:
-                logging.info("received a heartbeat package")
-                context.heartbeat_received = True
-                assert "u" in data and "pu" in data
-                assert data["pu"] == context.last_u, \
-                    "'u' sequence in heartbeat package mismatched"
+            if message.get("result", {}).get("channel") == "book.update":
+                data = message["result"]["data"][0]
+                if data["pu"] != context.last_u:
+                    raise AssertionError(
+                        f"Expected PU={context.last_u}, Actual PU={data['pu']}"
+                    )
                 context.last_u = data["u"]
-                return
+                update_data = data.get("update", {})
+                if update_data.get("asks") == [] and update_data.get("bids") == []:
+                    logging.info(f"Find heartbeat package! u={data['u']}, pu={data['pu']}")
+                    context.heartbeat_received = True
+                    break
 
-    assert context.heartbeat_received, f"Didn't receive heartbeat package in {seconds}s"
+        except TimeoutError:
+            logging.info("1.0s No message, continue waiting heartbeat package...")
+            pass
+
+        except ConnectionAbortedError as e:
+            raise ConnectionAbortedError(f"Connect closed: {e}")
+
+
+    if not context.heartbeat_received:
+        raise TimeoutError(f"No heartbeat package in {seconds}s")
 
 @when('I stored the u field of the snapshot response')
 def step_impl(context):
+    snapshot_msg = None
+    start_time = time.time()
+    timeout = 10
 
-    if not context.messages:
-        _wait_and_receive(context)
+    while time.time() - start_time < timeout:
+        for msg in reversed(context.messages):
+            result = msg.get("result", {})
+            if result.get("channel") == "book":
+                snapshot_msg = msg
+                break
 
-    snapshot_msg = context.messages[1]
+        if snapshot_msg:
+            break
 
-    data = snapshot_msg["result"]["data"][0]
-    context.last_u = data["u"]
+        try:
+            logging.info("wait 1.0s for new message...")
+            _wait_and_receive(context, timeout=1.0)
+        except TimeoutError:
+            pass
 
-    assert context.last_u is not None
+    if snapshot_msg is None:
+        raise TimeoutError("A 'book' snapshot message was not found in received messages. "
+                             f"Received: {context.messages}")
 
-    logging.info(f"the first Snapshot request: U value: {context.last_u}")
+    try:
+        data = snapshot_msg["result"]["data"][0]
+        context.last_u = data["u"]
+        assert context.last_u is not None, "Extracted 'u' is None"
+        logging.info(f"[Info] Stored initial snapshot U: {context.last_u}")
+
+    except (KeyError, IndexError, TypeError) as e:
+        raise AssertionError(f"Failed to extract 'u' from snapshot: {e}. Message: {snapshot_msg}")
 
 @when('Intentionally set the locally stored u sequence to "BAD_SEQUENCE"')
 def step_impl(context):
@@ -171,19 +202,20 @@ def step_impl(context):
             Given I subscribed to "book.BTCUSD-PERP.50" (SNAPSHOT) mode
         ''')
 
-@when('received and collect {count:d} delta messages')
-def step_impl(context, count):
-    logging.info(f"received {count} delta messages...")
+@when('received and collect delta messages for {seconds:d}s')
+def step_impl(context, seconds):
+    logging.info(f"receiving {seconds} delta messages...")
     context.timestamps = []
     context.sequence_ok = True
 
+    if not hasattr(context, 'last_u') or context.last_u is None:
+        raise AssertionError("Pre-conditions 'last_u' is None, cannot collect delta messages")
+
     start_time = time.time()
-    max_wait_seconds = 10
 
-    while len(context.timestamps) < count:
-
+    while time.time() - start_time < seconds:
         try:
-            message = _wait_and_receive(context, timeout=0.5)
+            message = _wait_and_receive(context, timeout=1.0)
 
             if message.get("result", {}).get("channel") == "book.update":
                 data = message["result"]["data"][0]
@@ -191,17 +223,22 @@ def step_impl(context, count):
                 pu = data.get("pu")
                 if pu != context.last_u:
                     context.sequence_ok = False
-                    logging.error(f"Sequence mismatched! Expected PU={context.last_u}, Actual PU={pu}")
+                    logging.error(f"pu and u mismatched")
                 context.last_u = data.get("u")
 
-                update_data = data.get("update", {})
-                if update_data.get("asks") != [] or update_data.get("bids") != []:
-                    context.timestamps.append(data["t"])
+                context.timestamps.append(data["t"])
+                logging.info(f"Successfully collected {len(context.timestamps)} delta messages")
 
         except TimeoutError:
+            logging.info("1.0s No message, continue waiting...")
             pass
 
-@when('received and collect snapshot messages in {seconds:d}s')
+        except ConnectionAbortedError as e:
+            raise ConnectionAbortedError(f"Connect closed by server: {e}。")
+
+    logging.info(f"--- Successfully collected {len(context.timestamps)} delta messages ---")
+
+@when('received and collect snapshot messages for {seconds:d}s')
 def step_impl(context, seconds):
     logging.info(f"{seconds} 秒, received snapshot messages...")
     context.timestamps = []
@@ -319,8 +356,8 @@ def step_impl(context):
 
 @then('The time interval between messages should be close to {expected_ms:d}ms')
 def step_impl(context,expected_ms):
-    if len(context.timestamps) < 10:
-        logging.warning(f"Only collect {len(context.timestamps)} messages), ")
+    if len(context.timestamps) < 2:
+        raise AssertionError(f"Only collect {len(context.timestamps)} messages), ")
 
     total_time_span_ms = context.timestamps[-1] - context.timestamps[0]
     num_intervals = len(context.timestamps) - 1

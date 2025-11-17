@@ -6,6 +6,9 @@
   <component name="ChangeListManager">
     <list default="true" id="7f9b1c0c-9878-4b95-938b-7c3ad6d7f2d9" name="Changes" comment="Update ALLURE/REPORT">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/features/environment.py" beforeDir="false" afterPath="$PROJECT_DIR$/features/environment.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/features/steps/ws_orderbook_step.py" beforeDir="false" afterPath="$PROJECT_DIR$/features/steps/ws_orderbook_step.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/features/ws_orderbook.feature" beforeDir="false" afterPath="$PROJECT_DIR$/features/ws_orderbook.feature" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -88,6 +91,8 @@
       <workItem from="1763097226430" duration="32288000" />
       <workItem from="1763198834235" duration="17887000" />
       <workItem from="1763304021761" duration="53000" />
+      <workItem from="1763304519135" duration="7573000" />
+      <workItem from="1763338415658" duration="5393000" />
     </task>
     <task id="LOCAL-00001" summary="The first commit">
       <option name="closed" value="true" />
@@ -113,7 +118,23 @@
       <option name="project" value="LOCAL" />
       <updated>1763304058414</updated>
     </task>
-    <option name="localTasksCounter" value="4" />
+    <task id="LOCAL-00004" summary="Update ALLURE/REPORT">
+      <option name="closed" value="true" />
+      <created>1763315452151</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1763315452151</updated>
+    </task>
+    <task id="LOCAL-00005" summary="Update ALLURE/REPORT">
+      <option name="closed" value="true" />
+      <created>1763315559912</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1763315559912</updated>
+    </task>
+    <option name="localTasksCounter" value="6" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">

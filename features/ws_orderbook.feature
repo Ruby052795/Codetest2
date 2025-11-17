@@ -36,26 +36,29 @@ Feature: WebSocket orderbook API
   @snapshot @TC10 @TC11
   Scenario: TC-10, TC-11 - SNAPSHOT Mode Behavior and Data Validation
     Given I subscribed to "book.BTCUSD-PERP.10" (SNAPSHOT) mode
-    When received and collect snapshot messages in 3s
+    When received and collect snapshot messages for 3s
     And I re-subscribed the same request with depth value changed (TC-11)
     Then The second snapshot response should be a valid snapshot message
     And The time interval between messages should be close to 500ms
     And The data structure of the snapshot should be correct
 
+   # in sandbox, delta subscription only receive heartbeat packages
   @delta @TC12 @TC13
   Scenario: TC-12, TC-13 - DELTA Mode Updates and Sequence Validation
-    Given I subscribed to "book.BTCUSD-PERP.10" (SNAPSHOT_AND_UPDATE) mode
-    When received and collect 3 delta messages
+    Given I subscribed to "book.BTCUSD-PERP.50" (SNAPSHOT_AND_UPDATE) mode
+    When I stored the u field of the snapshot response
+    And received and collect delta messages for 3s
     And I re-subscribed the same request with depth value changed (TC-13)
     Then The time interval between messages should be close to 100ms
     And The u and pu sequences must remain continuous
     And The data structure of the delta should be correct
 
-  # need a 'instrument_name' which have no update to track a heartbeat package
+
   @delta @TC14
   Scenario: TC-14 - DELTA Mode Heartbeat Packet Detection
     Given I subscribed to "book.BTCUSD-PERP.10" (SNAPSHOT_AND_UPDATE) mode
-    When I wait up to 5 seconds to receive a heartbeat package
+    When I stored the u field of the snapshot response
+    And I wait up to 5 seconds to receive a heartbeat package
     Then I should have received a heartbeat message
 
   @recovery @TC15 @TC16
